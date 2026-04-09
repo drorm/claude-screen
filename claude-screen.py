@@ -15,7 +15,7 @@ Usage:
     CLAUDE_SCREEN_DEBUG=1 python3 claude-screen.py   # log to /tmp/claude-screen.log
 """
 
-import fcntl, os, pty, re, select, signal, struct, sys, termios, time
+import fcntl, os, pty, re, select, signal, struct, sys, termios, time, tty
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pyte
@@ -228,8 +228,24 @@ def main():
     stdout_fd = sys.stdout.fileno()
     old_tty = termios.tcgetattr(stdin_fd)
 
+    # Suspend character from the original terminal settings (usually ^Z / 0x1a)
+    susp_char = old_tty[6][termios.VSUSP] or b'\x1a'
+
+    def suspend():
+        """Suspend the proxy: restore terminal, stop self, re-enter raw on resume."""
+        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_tty)
+        os.write(stdout_fd, b'\x1b[?25h')  # show cursor
+        os.kill(os.getpid(), signal.SIGSTOP)
+        # — resumed via SIGCONT —
+        tty.setraw(stdin_fd)
+        # Redraw the full screen
+        screen.dirty.update(range(screen.lines))
+        out = render(screen, screen.dirty)
+        screen.dirty.clear()
+        if out:
+            os.write(stdout_fd, out)
+
     try:
-        import tty
         tty.setraw(stdin_fd)
 
         while True:
@@ -247,8 +263,13 @@ def main():
             if stdin_fd in ready:
                 try:
                     d = os.read(stdin_fd, 4096)
-                    if d:
-                        os.write(master_fd, d)
+                    if not d:
+                        break
+                    if susp_char in d:
+                        _log('suspend (^Z)')
+                        suspend()
+                        continue
+                    os.write(master_fd, d)
                 except OSError:
                     break
 

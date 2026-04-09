@@ -79,7 +79,7 @@ alias claude='python3 /path/to/claude-screen.py'
 |---|---|---|---|
 | tmux | Native support | None | Just use tmux |
 | [claude-chill](https://github.com/davidbeesley/claude-chill) | VT emulator + diff | Rust binary (~4K lines) | Feature-rich (history, lookback) |
-| **claude-screen** | VT emulator + diff | Python + pyte (~200 lines) | Minimal, single-file |
+| **claude-screen** | VT emulator + diff | Python + pyte (~300 lines) | Minimal, single-file |
 
 ## Limitations
 
