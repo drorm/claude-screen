@@ -109,6 +109,29 @@ def _sgr(ch):
 # Diff renderer
 # ---------------------------------------------------------------------------
 
+def _render_row(row, default, cols):
+    """Return the SGR-painted content for a buffer row, trimmed to the
+    rightmost non-trivial cell. Empty string if the row has no content."""
+    end = -1
+    for x in range(cols):
+        ch = row.get(x, default)
+        if (ch.data != ' ' or ch.fg != 'default' or ch.bg != 'default'
+                or ch.bold or ch.reverse):
+            end = x
+    if end < 0:
+        return ''
+    parts = []
+    prev = None
+    for x in range(end + 1):
+        ch = row.get(x, default)
+        s = _sgr(ch)
+        if s != prev:
+            parts.append(s)
+            prev = s
+        parts.append(ch.data)
+    return ''.join(parts)
+
+
 def render(screen, dirty):
     """Render dirty lines. Returns bytes to write to the real terminal."""
     out = []
@@ -119,28 +142,8 @@ def render(screen, dirty):
         if y >= rows:
             continue
         row = screen.buffer.get(y, {})
-
-        # Find rightmost non-trivial cell
-        end = -1
-        for x in range(cols):
-            ch = row.get(x, default)
-            if (ch.data != ' ' or ch.fg != 'default' or ch.bg != 'default'
-                    or ch.bold or ch.reverse):
-                end = x
-
         out.append(f'\x1b[{y+1};1H')
-        if end < 0:
-            out.append('\x1b[0m\x1b[K')
-            continue
-
-        prev = None
-        for x in range(end + 1):
-            ch = row.get(x, default)
-            s = _sgr(ch)
-            if s != prev:
-                out.append(s)
-                prev = s
-            out.append(ch.data)
+        out.append(_render_row(row, default, cols))
         out.append('\x1b[0m\x1b[K')
 
     # Cursor
@@ -151,6 +154,55 @@ def render(screen, dirty):
         out.append('\x1b[?25l')
 
     return ''.join(out).encode()
+
+
+def flush_scrollback(screen):
+    """Push lines that scrolled off pyte's top edge into the real terminal's
+    native scrollback buffer. Write each captured line to the top row, then
+    emit IND at the bottom row so the terminal scrolls and the line we just
+    wrote moves into scrollback. The subsequent diff render repaints the
+    whole viewport (pyte marked everything dirty when it scrolled)."""
+    if not screen.scrollback_lines:
+        return b''
+    rows, cols = screen.lines, screen.columns
+    default = screen.default_char
+    out = []
+    for line in screen.scrollback_lines:
+        out.append('\x1b[1;1H')
+        out.append(_render_row(line, default, cols))
+        out.append('\x1b[0m\x1b[K')
+        out.append(f'\x1b[{rows};1H\x1bD')
+    screen.scrollback_lines.clear()
+    return ''.join(out).encode()
+
+
+class ScrollbackScreen(pyte.Screen):
+    """Pyte screen that captures lines scrolled off the top so they can be
+    forwarded to the real terminal's native scrollback buffer. Only captures
+    full-screen scrolls — DEC margin regions (used for status bars, pagers)
+    are intentionally confined and must not leak into scrollback."""
+
+    def __init__(self, columns, lines):
+        # Must be set before super().__init__, which calls self.reset().
+        self.scrollback_lines = []
+        super().__init__(columns, lines)
+
+    def index(self):
+        top, bottom = self.margins or (0, self.lines - 1)
+        if (top == 0 and bottom == self.lines - 1
+                and self.cursor.y == bottom):
+            line = self.buffer.get(0)
+            self.scrollback_lines.append(dict(line) if line else {})
+        super().index()
+
+    def reset(self):
+        super().reset()
+        self.scrollback_lines.clear()
+
+    def resize(self, lines=None, columns=None):
+        # Drop any pending capture: its coordinates/width may no longer match.
+        self.scrollback_lines.clear()
+        super().resize(lines, columns)
 
 # ---------------------------------------------------------------------------
 # Terminal helpers
@@ -209,7 +261,7 @@ def main():
 
     os.close(slave_fd)
 
-    screen = pyte.Screen(cols, rows)
+    screen = ScrollbackScreen(cols, rows)
     stream = pyte.Stream(screen)
     in_sync = False
     last_out_t = None
@@ -293,16 +345,19 @@ def main():
             if pending and last_out_t and (time.time() - last_out_t) >= delay:
                 dirty = screen.dirty
                 if dirty:
+                    sb = flush_scrollback(screen)
                     out = render(screen, dirty)
                     screen.dirty.clear()
-                    if out:
-                        os.write(stdout_fd, out)
+                    if sb or out:
+                        os.write(stdout_fd, sb + out)
                 pending = False
 
             try:
                 if os.waitpid(pid, os.WNOHANG)[0]:
                     if screen.dirty:
-                        os.write(stdout_fd, render(screen, screen.dirty))
+                        os.write(stdout_fd,
+                                 flush_scrollback(screen)
+                                 + render(screen, screen.dirty))
                     break
             except ChildProcessError:
                 break

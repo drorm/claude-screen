@@ -12,6 +12,8 @@ This is especially visible in nested screen sessions (e.g., local screen -> SSH 
 
 `claude-screen` sits between Claude Code and your terminal as a PTY proxy. It runs a virtual terminal emulator ([pyte](https://github.com/selectel/pyte)) that absorbs Claude's full output — sync blocks, cursor movement, colors, everything. Instead of forwarding the raw escape sequences, it diffs the virtual screen against what was last rendered and sends only the changed lines using basic escape sequences that screen handles correctly.
 
+When lines scroll off the top of the virtual screen, they are forwarded to the real terminal's native scrollback buffer (screen's copy mode, your terminal's scrollbar) so you can still scroll back through earlier output.
+
 This is the same approach used by tmux internally and by [claude-chill](https://github.com/davidbeesley/claude-chill) (a Rust implementation).
 
 ## Install
@@ -85,7 +87,7 @@ alias claude='python3 /path/to/claude-screen.py'
 
 - pyte doesn't support SGR 2 (dim/faint text), so dim content renders at normal brightness.
 - True color (24-bit) passthrough depends on your screen version supporting `38;2;r;g;b`. Most 256-color values are mapped back correctly.
-- No scrollback history or lookback mode (unlike claude-chill).
+- No in-proxy lookback mode (unlike claude-chill) — use your terminal's native scrollback.
 
 ## License
 
