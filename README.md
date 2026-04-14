@@ -87,11 +87,21 @@ CLAUDE_SCREEN_DEBUG=1 python3 claude-screen.py
 
 ### Shell alias
 
-Add to your `.bashrc` / `.zshrc`:
+Aliasing `claude` to the wrapper is the recommended setup — arguments pass through, so commands like `claude --resume 3e1ba691-...` work unchanged.
+
+bash / zsh (`.bashrc` / `.zshrc`):
 
 ```bash
 alias claude='python3 /path/to/claude-screen.py'
 ```
+
+tcsh / csh (`.tcshrc` / `.cshrc`):
+
+```tcsh
+alias claude /path/to/claude-screen.py
+```
+
+(The script has a `#!/usr/bin/env python3` shebang; `chmod +x claude-screen.py` once and you can invoke it directly.)
 
 ## How it compares
 
@@ -100,6 +110,18 @@ alias claude='python3 /path/to/claude-screen.py'
 | tmux | Native support | None | Just use tmux |
 | [claude-chill](https://github.com/davidbeesley/claude-chill) | VT emulator + diff | Rust binary (~4K lines) | Feature-rich (history, lookback) |
 | **claude-screen** | VT emulator + diff | Python + pyte (~300 lines) | Minimal, single-file |
+
+## Security
+
+`claude-screen` sits between Claude Code and your terminal, so it sees every keystroke you type and everything Claude writes back. You should only run code that does that after you've looked at it.
+
+The wrapper is designed to be easy to audit:
+
+- One file (`claude-screen.py`, ~400 lines of Python).
+- One dependency (`pyte`, a widely-used VT emulator).
+- No network calls, no filesystem writes outside the optional debug log (`/tmp/claude-screen.log`, only when `CLAUDE_SCREEN_DEBUG=1`), no subprocesses other than `claude` itself.
+
+You can read the source directly, or paste it into Claude Code (or another LLM) and ask it to summarize behavior and flag anything surprising. LLM review isn't a security guarantee — it can miss subtle issues — but it's a low-effort way to get a second look before you trust the wrapper with your session.
 
 ## Limitations
 
