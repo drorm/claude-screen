@@ -156,6 +156,18 @@ def render(screen, dirty):
     return ''.join(out).encode()
 
 
+_CLEAR_MARKER_LABEL = 'Clear screen replacement'
+
+
+def _clear_marker_rows(cols, default):
+    """Rows pushed into scrollback to mark a caught clear-screen event."""
+    bar = {i: default._replace(data='-') for i in range(cols)}
+    label_start = max(0, (cols - len(_CLEAR_MARKER_LABEL)) // 2)
+    label = {label_start + i: default._replace(data=c)
+             for i, c in enumerate(_CLEAR_MARKER_LABEL)}
+    return [bar, {}, label, {}, bar]
+
+
 def flush_scrollback(screen):
     """Push lines that scrolled off pyte's top edge into the real terminal's
     native scrollback buffer. Write each captured line to the top row, then
@@ -299,6 +311,21 @@ def main():
 
     try:
         tty.setraw(stdin_fd)
+
+        # Preserve prior terminal content: scroll the visible viewport into
+        # real-terminal scrollback, then emit a boundary marker. Both go
+        # straight to stdout — pyte starts blank, so its capture path has
+        # nothing to see here, and our first render() would otherwise paint
+        # on top of the shell output still visible on screen.
+        bootstrap = f'\x1b[{rows};1H'.encode() + b'\n' * rows
+        marker_parts = []
+        default = screen.default_char
+        for mrow in _clear_marker_rows(cols, default):
+            marker_parts.append('\x1b[1;1H')
+            marker_parts.append(_render_row(mrow, default, cols))
+            marker_parts.append('\x1b[0m\x1b[K')
+            marker_parts.append(f'\x1b[{rows};1H\x1bD')
+        os.write(stdout_fd, bootstrap + ''.join(marker_parts).encode())
 
         while True:
             delay = (SYNC_RENDER_DELAY if in_sync else RENDER_DELAY)
