@@ -1,12 +1,30 @@
 # claude-screen
 
-Fix Claude Code rendering in GNU screen and other environments.
+A PTY wrapper for Claude Code that fixes rendering in GNU screen and preserves your terminal's native scrollback.
 
-## The problem
+## What it fixes
+
+### Rendering in GNU screen
 
 Claude Code uses [synchronized output](https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036) (DEC mode 2026) for flicker-free terminal rendering. tmux supports this; GNU screen does not. Screen silently discards the sync markers, so the raw escape sequences execute immediately. When the cursor is near the bottom of the terminal, bare `\r\n` sequences in the output trigger unwanted scrolling, causing cumulative drift that corrupts the display.
 
-This is especially visible in nested screen sessions (e.g., local screen -> SSH -> remote screen -> Claude Code).
+This is especially visible in nested screen sessions (e.g., local screen → SSH → remote screen → Claude Code).
+
+### Scrollback preservation
+
+Claude Code emits `\e[3J` (Erase Scrollback) as part of its render cycle, which destroys your terminal's native scrollback. This affects every terminal — not just screen — and is tracked upstream in [anthropics/claude-code#2479](https://github.com/anthropics/claude-code/issues/2479) and [#42670](https://github.com/anthropics/claude-code/issues/42670). The result: shell output from before `claude` launched is wiped, and you can't scroll up to see earlier parts of the session.
+
+`claude-screen` absorbs Claude's output in a virtual terminal, so the scrollback-erasing escapes never reach the real terminal. At startup it pushes any visible shell output into native scrollback and emits a boundary marker:
+
+```
+----------------------------------------------------------------
+
+                    Clear screen replacement
+
+----------------------------------------------------------------
+```
+
+so when you scroll up you can see exactly where the shell ends and the claude session begins.
 
 ## How it works
 

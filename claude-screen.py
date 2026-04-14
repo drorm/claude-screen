@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-claude-screen — Fix Claude Code rendering in GNU screen.
+claude-screen — PTY wrapper for Claude Code.
 
-GNU screen doesn't support synchronized output (DEC mode 2026), which
-Claude Code relies on for flicker-free rendering. This wrapper runs a
-virtual terminal emulator (pyte) that absorbs Claude's raw output, then
-sends only per-line diffs to the real terminal using basic escape
-sequences that screen handles correctly.
+Fixes two rendering issues:
+  1. GNU screen doesn't support synchronized output (DEC mode 2026), which
+     Claude Code relies on for flicker-free rendering.
+  2. Claude Code emits \\e[3J (Erase Scrollback) during its render cycle,
+     which wipes the terminal's native scrollback on every frame — so prior
+     shell history and earlier session output can't be scrolled back to.
+
+The wrapper runs a virtual terminal emulator (pyte) that absorbs Claude's
+raw output, then sends only per-line diffs to the real terminal using basic
+escape sequences that screen handles correctly. Scrollback-erasing escapes
+are contained in the virtual terminal and never reach the real one; lines
+that scroll off pyte's top edge are forwarded into native scrollback.
 
 Requires: pyte (pip install pyte)
 
