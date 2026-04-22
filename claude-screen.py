@@ -100,8 +100,11 @@ def _sgr_color(color, bg=False):
 
 
 def _sgr(ch):
-    """Full SGR sequence string for a pyte Char."""
-    p = []
+    """Full SGR sequence string for a pyte Char. Always resets first (leading
+    '0') so attributes from the previous cell's state don't leak into this
+    one — otherwise transitions like reverse→default would keep reverse on,
+    since a bare '\\x1b[39;49m' only touches fg/bg."""
+    p = ['0']
     if ch.bold:          p.append('1')
     if ch.italics:       p.append('3')
     if ch.underscore:    p.append('4')
@@ -246,6 +249,11 @@ def _log(msg):
         _log_fd.write(f'[{time.time():.3f}] {msg}\n'.encode())
 
 
+def _log_io(tag, data):
+    if _log_fd and data:
+        _log_fd.write(f'[{time.time():.3f}] {tag} {data!r}\n'.encode())
+
+
 def _strip_sync(data):
     """Remove sync markers, return (cleaned_bytes, currently_in_sync)."""
     in_sync = False
@@ -355,6 +363,7 @@ def main():
                         _log('suspend (^Z)')
                         suspend()
                         continue
+                    _log_io('>', d)
                     os.write(master_fd, d)
                 except OSError:
                     break
@@ -365,8 +374,13 @@ def main():
                 except OSError:
                     break
 
+                _log_io('<', data)
                 data, in_sync = _strip_sync(data)
-                data = _STRIP.sub(b'', data)
+                stripped = _STRIP.sub(b'', data)
+                if stripped != data:
+                    for m in _STRIP.finditer(data):
+                        _log_io('-', m.group(0))
+                data = stripped
 
                 if data:
                     try:
