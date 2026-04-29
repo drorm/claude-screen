@@ -57,6 +57,7 @@ _NAMED = {
     'black': 0, 'red': 1, 'green': 2, 'brown': 3, 'yellow': 3,
     'blue': 4, 'magenta': 5, 'cyan': 6, 'white': 7,
     'brightblack': 8, 'brightred': 9, 'brightgreen': 10, 'brightyellow': 11,
+    'brightbrown': 11,
     'brightblue': 12, 'brightmagenta': 13, 'brightcyan': 14, 'brightwhite': 15,
 }
 
@@ -95,6 +96,8 @@ def _sgr_color(color, bg=False):
     color = color.lower()
     if color in _HEX256:
         return f'{base+8};5;{_HEX256[color]}'
+    if len(color) != 6 or any(c not in '0123456789abcdef' for c in color):
+        return '49' if bg else '39'
     r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
     return f'{base+8};2;{r};{g};{b}'
 
